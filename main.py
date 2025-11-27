@@ -7,7 +7,7 @@ import openai
 
 openai.api_key = os.getenv("OPENAI_API_KEY")
 openai.api_base = os.getenv("OPENAI_API_BASE", "https://api.cursorai.art/v1")
-MODEL_NAME = "gpt-5.1-thinking-all"
+MODEL_NAME = "gpt-5-2025-08-07"
 if not openai.api_key:
     raise RuntimeError("未找到环境变量 CURSOR_API_KEY，请先配置你的 API 密钥。")
 
@@ -351,6 +351,8 @@ if "completed" not in st.session_state:
     st.session_state.completed = False
 if "emotion" not in st.session_state:
     st.session_state.emotion = None
+if "last_emotion_filled_count" not in st.session_state:
+    st.session_state.last_emotion_filled_count = 0
 
 # 👉 新增：话题分类失败次数 & 是否进入“手动选择模式”
 if "topic_retry_count" not in st.session_state:
@@ -375,6 +377,7 @@ with st.sidebar:
         st.session_state.topic_retry_count = 0
         st.session_state.manual_topic_select = False
         st.session_state.rejected_topics = []
+        st.session_state.last_emotion_filled_count = 0
         st.rerun()
 
     # ========== 话题类型展示 & 操作 ==========
@@ -471,6 +474,9 @@ with st.sidebar:
 
     st.progress(filled_count / 6.0 if 6 else 0.0)
     st.write(f"已填充要素：**{filled_count} / 6**")
+    if filled_count >= 4 and filled_count > st.session_state.last_emotion_filled_count:
+        st.session_state.emotion = classify_emotion(st.session_state.history)
+        st.session_state.last_emotion_filled_count = filled_count
 
     for key, name in [
         ("who", "谁（who）"),
@@ -487,9 +493,9 @@ with st.sidebar:
 
     # ========== 情绪标签展示 ==========
     st.markdown("---")
-    st.subheader("对话情绪（完成后生成）")
+    st.subheader("对话情绪")
     if st.session_state.emotion is None:
-        st.write("当前话题尚未完整，暂不分析情绪。")
+        st.write("当话题信息比较完整时，我会自动生成情绪结果。")
     else:
         emo = st.session_state.emotion
         st.write(f"主要情绪：**{emo['label']}**")
@@ -573,8 +579,11 @@ def process_user_message(text: str):
         )
         st.session_state.history.append({"role": "assistant", "content": reply})
     else:
-        emotion = classify_emotion(st.session_state.history)
-        st.session_state.emotion = emotion
+        # 如果之前还没算过情绪，这里再算一次；如果已经有了就直接用最新结果
+        if st.session_state.emotion is None:
+            st.session_state.emotion = classify_emotion(st.session_state.history)
+
+        emotion = st.session_state.emotion
 
         reply = (
             "谢谢你把这件事从头到尾讲清楚，我大概拼出了一个比较完整的故事。\n\n"
